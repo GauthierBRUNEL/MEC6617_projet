@@ -1,115 +1,153 @@
-% Définition des fichiers
-ref_file = '../data/signaux/signal037-026.dat';
-target_file = '../data/signaux/signal026-026.dat';
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Fichier : projet.m
+% Objet   : Traitement des données de turbulence – Questions 1 et 2
+%
+% Hypothèses :
+% - Les fichiers de données sont nommés "signalXXX-026.dat" avec XXX allant
+%   de 001 à 071, correspondant à la ligne j = 26.
+% - dt = 2.5e-3 s, N = 1632 échantillons, dx = 1e-3 m.
+% - K = 100, donc τ ∈ [-K*dt, K*dt].
+%
+% Énoncé :
+% Q1 : Calculer les coefficients de corrélation temporelle R_{0i}(τ) entre
+%      le point de référence (i0 = 37, j = 26) et tous les points de la ligne
+%      (1 ≤ i ≤ 71) pour τ ∈ [-K*dt, K*dt] et tracer quelques courbes.
+%
+% Q2 : Tracer les isocontours de R_{0i}(r,τ) (avec r = (i-i0)*dx en abscisse et τ en ordonnée),
+%      extraire pour chaque point le décalage τ_max pour lequel R_{0i}(τ) est maximal
+%      (pour τ ≥ 0) et déterminer la vitesse de convection U_c via un ajustement linéaire
+%      de la forme r = U_c * τ_max. Ici, RANSAC est utilisé pour extraire la tendance dominante.
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-% Fonction pour charger les données
-function [u, v] = load_velocity(file)
-    fid = fopen(file, 'r');
-    if fid == -1
-        error('Impossible d''ouvrir le fichier %s', file);
-    end
-    
-    % Sauter les métadonnées (4 lignes + 1 ligne de variables)
-    for i = 1:5
-        fgetl(fid);
-    end
-    
-    % Lire les données numériques
-    data = fscanf(fid, '%f %f', [2, Inf]);
-    fclose(fid);
-    
-    % Extraire les vitesses u et v
-    u = data(1, :);
-    v = data(2, :); 
+clear; clc; close all;
+
+%% Paramètres
+dt = 2.5e-3;         % Pas temporel (2.5 ms)
+N  = 1632;           % Nombre d'échantillons par série
+dx = 1e-3;           % Pas spatial (1 mm)
+K = 100;             % Nombre de pas pour τ (donc τ ∈ [-K*dt, K*dt])
+tauList = (-K:K)*dt; % Vecteur des décalages (en s)
+nTau = length(tauList);
+
+% Points spatiaux sur la ligne j = 26
+i0 = 37;             % Point de référence
+iList = 1:71;        % Indices des points sur la ligne
+nPoints = length(iList);
+rVector = (iList - i0)*dx;  % r = (i - i0)*dx (en m)
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Question 1 : Calcul et tracé des courbes de corrélation R_{0i}(τ)
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% 1) Chargement du signal de référence (i0 = 37)
+refFile = sprintf('../data/signaux/signal%03d-026.dat', i0);
+[uRef, ~] = load_velocity(refFile);
+uRefFluc = uRef - mean(uRef);  % u'_0 = u0 - ̄u₀
+
+if length(uRef) ~= N
+    error('Le fichier de référence ne contient pas %d échantillons.', N);
 end
 
-% Charger les séries temporelles
-[uref, vref] = load_velocity(ref_file);
-[utarget, vtarget] = load_velocity(target_file);
+% 2) Calcul des coefficients de corrélation R_{0i}(τ)
+CorrMatrix = zeros(nPoints, nTau);  % Matrice (nPoints x nTau)
 
-% Nombre d'échantillons
-N = length(uref);
-
-% Méthode 1 : Calcul classique avec l'équation (1)
-mean_uref = mean(uref);
-mean_utarget = mean(utarget);
-mean_vref = mean(vref);
-mean_vtarget = mean(vtarget);
-
-num_u_eq1 = sum((uref - mean_uref) .* (utarget - mean_utarget));
-num_v_eq1 = sum((vref - mean_vref) .* (vtarget - mean_vtarget));
-
-den_u_eq1 = sqrt(sum((uref - mean_uref).^2) * sum((utarget - mean_utarget).^2));
-den_v_eq1 = sqrt(sum((vref - mean_vref).^2) * sum((vtarget - mean_vtarget).^2));
-
-corr_u_eq1 = num_u_eq1 / den_u_eq1;
-corr_v_eq1 = num_v_eq1 / den_v_eq1;
-
-% Méthode 2 : Calcul via les équations (2), (3) et (4)
-num_u_eq234 = sum(uref .* utarget) - (1/N) * sum(uref) * sum(utarget);
-num_v_eq234 = sum(vref .* vtarget) - (1/N) * sum(vref) * sum(vtarget);
-
-den_u_eq234 = sqrt((sum(uref.^2) - (1/N) * sum(uref)^2) * (sum(utarget.^2) - (1/N) * sum(utarget)^2));
-den_v_eq234 = sqrt((sum(vref.^2) - (1/N) * sum(vref)^2) * (sum(vtarget.^2) - (1/N) * sum(vtarget)^2));
-
-corr_u_eq234 = num_u_eq234 / den_u_eq234;
-corr_v_eq234 = num_v_eq234 / den_v_eq234;
-
-% Méthode 3 : Utilisation de corrcoef
-corr_u_builtin = corrcoef(uref, utarget);
-corr_v_builtin = corrcoef(vref, vtarget);
-
-% Affichage des résultats
-disp('Coefficient de corrélation temporelle pour u entre les points 37 et 26:');
-disp(['Calcul avec corrcoef: ', num2str(corr_u_builtin(1,2))]);
-disp(['Calcul avec équation (1): ', num2str(corr_u_eq1)]);
-disp(['Calcul avec équations (2), (3), (4): ', num2str(corr_u_eq234)]);
-
-disp('Coefficient de corrélation temporelle pour v entre les points 37 et 26:');
-disp(['Calcul avec corrcoef: ', num2str(corr_v_builtin(1,2))]);
-disp(['Calcul avec équation (1): ', num2str(corr_v_eq1)]);
-disp(['Calcul avec équations (2), (3), (4): ', num2str(corr_v_eq234)]);
-
-% 1. Calcul de la matrice de corrélation
-corr_matrix = zeros(N, N);
-for tau = 1:N
-    for r = 1:N-tau
-        if (r+tau) <= N
-            num = sum((uref(r:N-tau) - mean(uref)) .* (utarget(r+tau:N) - mean(utarget)));
-            den = sqrt(sum((uref(r:N-tau) - mean(uref)).^2) * sum((utarget(r+tau:N) - mean(utarget)).^2));
-            if den ~= 0
-                corr_matrix(r, tau) = num / den;
-            else
-                corr_matrix(r, tau) = 0;
-            end
+for idx = 1:nPoints
+    iCur = iList(idx);
+    
+    % Chargement du signal du point iCur
+    targetFile = sprintf('../data/signaux/signal%03d-026.dat', iCur);
+    [uTarget, ~] = load_velocity(targetFile);
+    
+    if length(uTarget) ~= N
+        error('Le fichier %s ne contient pas %d échantillons.', targetFile, N);
+    end
+    
+    % Calcul de la fluctuation u'_i = u_i - ̄uᵢ
+    uTargetFluc = uTarget - mean(uTarget);
+    
+    % Calcul pour chaque décalage τ = k*dt, pour k = -K ... K.
+    for k = -K:K
+        col = k + K + 1;  % Transformation de k = -K...K en indice 1 ... 2K+1
+        if k >= 0
+            nMax = N - k - 1;  % Borne supérieure corrigée
+            num = sum(uRefFluc(1:nMax) .* uTargetFluc(1+k:nMax+k));
+            den = sqrt(sum(uRefFluc(1:nMax).^2) * sum(uTargetFluc(1+k:nMax+k).^2));
+        else
+            kk = abs(k);
+            nMax = N - kk - 1;
+            num = sum(uRefFluc(1+kk:nMax+kk) .* uTargetFluc(1:nMax));
+            den = sqrt(sum(uRefFluc(1+kk:nMax+kk).^2) * sum(uTargetFluc(1:nMax).^2));
+        end
+        
+        if den > 1e-14
+            CorrMatrix(idx, col) = num / den;
+        else
+            CorrMatrix(idx, col) = 0;
         end
     end
 end
 
-% 2. Calcul et correction de la vitesse de convection Uc
-[~, max_indices] = max(corr_matrix, [], 2); 
-valid_indices = find(max_indices > 0 & max_indices < N);  
+% 3) Tracé des courbes de corrélation pour quelques points choisis
+pointsToPlot = [10, 26, 37, 60];  % Exemples d'indices parmi iList
+figure;
+hold on;
+for iVal = pointsToPlot
+    idx = find(iList == iVal);
+    plot(tauList, CorrMatrix(idx, :), 'LineWidth', 1.5, 'DisplayName', sprintf('i = %d', iVal));
+end
+hold off;
+xlabel('\tau (s)');
+ylabel('Coefficient de corrélation R_{0i}(\tau)');
+title('Courbes de corrélation pour quelques points (Question 1)');
+legend('show'); grid on;
 
-if ~isempty(valid_indices)
-    r_values = valid_indices;
-    tau_values = max_indices(valid_indices);
-    
-    % Inversion du signe de tau pour obtenir une vitesse positive
-    tau_eff = -tau_values;
-    
-    % Ajustement linéaire r = Uc * tau_eff
-    p = polyfit(tau_eff, r_values, 1);
-    Uc = p(1);
-    
-    disp(['Valeur estimée de la vitesse de convection Uc: ', num2str(Uc)]);
-else
-    disp('Impossible de calculer Uc : données insuffisantes.');
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Question 2 : Tracé des isocontours, extraction de la tendance dominante et estimation de U_c
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% 1) Tracé des isocontours du champ de corrélation R_{0i}(r,τ)
+figure;
+contourf(rVector, tauList, CorrMatrix', 20, 'LineColor','none');
+colorbar;
+xlabel('Distance r (m)');
+ylabel('\tau (s)');
+title('Isocontours de R_{0i}(r,\tau) (Question 2)');
+
+% 2) Extraction de τ_max pour chaque point (considérant τ ≥ 0)
+tauPos = tauList(K+1:end);  % On ne prend que τ ≥ 0 (indice K+1 correspond à τ = 0)
+tauMax = zeros(nPoints,1);
+for idx = 1:nPoints
+    corrPos = CorrMatrix(idx, K+1:end);  % Partie pour τ ≥ 0
+    [~, imax] = max(corrPos);
+    tauMax(idx) = tauPos(imax);
 end
 
-% 3. Tracé des isocontours
+% 3) Tracé du nuage de points (τ_max vs. r)
 figure;
-contourf(1:N, 1:N, corr_matrix, 20, 'LineColor', 'none');
-colorbar;
-xlabel('Distance r');
-ylabel('Décalage temporel \tau');
-title('Isocontours du coefficient de corrélation R(r, \tau)');
+scatter(tauMax, rVector, 50, 'filled');
+xlabel('\tau_{max} (s)');
+ylabel('Distance r (m)');
+title('Nuage de points (τ_{max} vs. r) (Question 2)');
+grid on;
+
+% 4) Utilisation de RANSAC pour extraire la tendance linéaire dominante
+maxIter = 500;     % Nombre d'itérations
+threshold = 0.002;   % Seuil de distance (à ajuster selon l'échelle de r)
+minInliers = 5;      % Nombre minimal d'inliers pour valider un modèle
+
+[bestM, bestB, inliersIdx] = ransacLineFit(tauMax, rVector, maxIter, threshold, minInliers);
+fprintf('RANSAC: U_c = %.4f m/s (pente)\n', bestM);
+
+% 5) Tracé du nuage de points avec la droite RANSAC
+figure;
+scatter(tauMax, rVector, 50, 'filled'); hold on;
+scatter(tauMax(inliersIdx), rVector(inliersIdx), 50, 'g', 'filled'); % Inliers en vert
+tauFit = linspace(min(tauMax), max(tauMax), 100);
+rFit = bestM * tauFit + bestB;
+plot(tauFit, rFit, 'r-', 'LineWidth', 2);
+hold off;
+xlabel('\tau_{max} (s)');
+ylabel('Distance r (m)');
+title('Ajustement RANSAC pour l''estimation de U_c (Question 2)');
+legend('Tous les points', 'Cluter le plus long', sprintf('Droite RANSAC: U_c = %.4f m/s', bestM), 'Location', 'Best');
+grid on;
