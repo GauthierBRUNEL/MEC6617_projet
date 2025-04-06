@@ -15,11 +15,16 @@
 %
 % Q2 : Tracer les isocontours de R_{0i}(r,τ) (avec r = (i-i0)*dx en abscisse et τ en ordonnée),
 %      extraire pour chaque point le décalage τ_max pour lequel R_{0i}(τ) est maximal
-%      (pour τ ≥ 0) et déterminer la vitesse de convection U_c via un ajustement linéaire
-%      de la forme r = U_c * τ_max. Ici, RANSAC est utilisé pour extraire la tendance dominante.
+%      (pour τ ≥ 0, en se limitant à une fenêtre primaire) et déterminer la vitesse de 
+%      convection U_c via un ajustement linéaire forcé à passer par l'origine : r = U_c * τ_max.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 clear; clc; close all;
+
+% Créer le dossier results s'il n'existe pas
+if ~exist('../results', 'dir')
+    mkdir('../results');
+end
 
 %% Paramètres
 dt = 2.5e-3;         % Pas temporel (2.5 ms)
@@ -42,7 +47,7 @@ rVector = (iList - i0)*dx;  % r = (i - i0)*dx (en m)
 % 1) Chargement du signal de référence (i0 = 37)
 refFile = sprintf('../data/signaux/signal%03d-026.dat', i0);
 [uRef, ~] = load_velocity(refFile);
-uRefFluc = uRef - mean(uRef);  % u'_0 = u0 - ̄u₀
+uRefFluc = uRef - mean(uRef);  % u'_0 = u0 - \bar{u}_0
 
 if length(uRef) ~= N
     error('Le fichier de référence ne contient pas %d échantillons.', N);
@@ -62,7 +67,7 @@ for idx = 1:nPoints
         error('Le fichier %s ne contient pas %d échantillons.', targetFile, N);
     end
     
-    % Calcul de la fluctuation u'_i = u_i - ̄uᵢ
+    % Calcul de la fluctuation u'_i = u_i - \bar{u}_i
     uTargetFluc = uTarget - mean(uTarget);
     
     % Calcul pour chaque décalage τ = k*dt, pour k = -K ... K.
@@ -100,9 +105,10 @@ xlabel('\tau (s)');
 ylabel('Coefficient de corrélation R_{0i}(\tau)');
 title('Courbes de corrélation pour quelques points (Question 1)');
 legend('show'); grid on;
+saveas(gcf, '../results/courbes_correlation.png');
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% Question 2 : Tracé des isocontours, extraction de la tendance dominante et estimation de U_c
+%% Question 2 : Tracé des isocontours, extraction du maximum primaire et estimation de U_c
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 % 1) Tracé des isocontours du champ de corrélation R_{0i}(r,τ)
@@ -112,14 +118,23 @@ colorbar;
 xlabel('Distance r (m)');
 ylabel('\tau (s)');
 title('Isocontours de R_{0i}(r,\tau) (Question 2)');
+saveas(gcf, '../results/isocontours_corr.png');
 
-% 2) Extraction de τ_max pour chaque point (considérant τ ≥ 0)
-tauPos = tauList(K+1:end);  % On ne prend que τ ≥ 0 (indice K+1 correspond à τ = 0)
+% 2) Extraction de τ_max pour chaque point, en se limitant à une fenêtre primaire
+%    Ici, nous sélectionnons uniquement les τ ≤ tau_lim pour privilégier le maximum primaire.
+tau_lim = 0.02;  % Limite pour le maximum primaire (par exemple, 20 ms)
+tauPos = tauList(K+1:end);  % Valeurs pour τ ≥ 0
+valid_idx = find(tauPos <= tau_lim);
+if isempty(valid_idx)
+    valid_idx = 1:length(tauPos);
+end
+
 tauMax = zeros(nPoints,1);
 for idx = 1:nPoints
     corrPos = CorrMatrix(idx, K+1:end);  % Partie pour τ ≥ 0
-    [~, imax] = max(corrPos);
-    tauMax(idx) = tauPos(imax);
+    corrPrimary = corrPos(valid_idx);    % Restriction à la fenêtre primaire
+    [~, imax] = max(corrPrimary);
+    tauMax(idx) = tauPos(valid_idx(imax));
 end
 
 % 3) Tracé du nuage de points (τ_max vs. r)
@@ -129,25 +144,23 @@ xlabel('\tau_{max} (s)');
 ylabel('Distance r (m)');
 title('Nuage de points (τ_{max} vs. r) (Question 2)');
 grid on;
+saveas(gcf, '../results/nuage_points.png');
 
-% 4) Utilisation de RANSAC pour extraire la tendance linéaire dominante
-maxIter = 500;     % Nombre d'itérations
-threshold = 0.002;   % Seuil de distance (à ajuster selon l'échelle de r)
-minInliers = 5;      % Nombre minimal d'inliers pour valider un modèle
+% 4) Ajustement linéaire forcé à passer par l'origine pour estimer U_c
+%    On impose que r = U_c * τ_max (c'est-à-dire b = 0).
+Uc = sum(rVector(:) .* tauMax(:)) / sum(tauMax(:).^2);
+fprintf('Estimated convection speed U_c = %.4f m/s\n', Uc);
 
-[bestM, bestB, inliersIdx] = ransacLineFit(tauMax, rVector, maxIter, threshold, minInliers);
-fprintf('RANSAC: U_c = %.4f m/s (pente)\n', bestM);
-
-% 5) Tracé du nuage de points avec la droite RANSAC
+% 5) Tracé du nuage de points avec la droite d'ajustement forcée par l'origine
 figure;
 scatter(tauMax, rVector, 50, 'filled'); hold on;
-scatter(tauMax(inliersIdx), rVector(inliersIdx), 50, 'g', 'filled'); % Inliers en vert
 tauFit = linspace(min(tauMax), max(tauMax), 100);
-rFit = bestM * tauFit + bestB;
+rFit = Uc * tauFit;  % Ajustement linéaire forcé: r = U_c * τ
 plot(tauFit, rFit, 'r-', 'LineWidth', 2);
 hold off;
 xlabel('\tau_{max} (s)');
 ylabel('Distance r (m)');
-title('Ajustement RANSAC pour l''estimation de U_c (Question 2)');
-legend('Tous les points', 'Cluter le plus long', sprintf('Droite RANSAC: U_c = %.4f m/s', bestM), 'Location', 'Best');
+title('Ajustement linéaire (passant par 0) pour l''estimation de U_c (Question 2)');
+legend('Données', sprintf('Droite: U_c = %.4f m/s', Uc), 'Location', 'Best');
 grid on;
+saveas(gcf, '../results/ajustement_lineaire.png');

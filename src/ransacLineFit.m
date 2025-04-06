@@ -10,7 +10,7 @@ function [bestM, bestB, inliersIdx] = ransacLineFit(tau, r, maxIter, threshold, 
 %   bestM, bestB : pente et intercept de la meilleure droite (U_c = bestM)
 %   inliersIdx   : indices des points considérés comme inliers
 
-    % Forcer tau et r en vecteurs colonnes
+    % Forcer tau et r à être des vecteurs colonnes
     tau = tau(:);
     r = r(:);
     N = length(tau);
@@ -24,13 +24,13 @@ function [bestM, bestB, inliersIdx] = ransacLineFit(tau, r, maxIter, threshold, 
         t2 = tau(pts(2)); r2 = r(pts(2));
         
         if abs(t2 - t1) < 1e-14
-            continue;
+            continue; % Éviter cas dégénéré
         end
         
         m = (r2 - r1) / (t2 - t1);
         b = r1 - m*t1;
         
-        % Calcul de la distance verticale pour chaque point à la droite
+        % Calcul de la distance verticale pour chaque point à la droite r = m*tau + b
         distAll = abs(r - (m*tau + b));
         inliers = find(distAll < threshold);
         inliersCount = numel(inliers);
