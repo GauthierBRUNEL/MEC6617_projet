@@ -1,80 +1,46 @@
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% Fichier : projet.m
-% Objet   : Traitement des données de turbulence – Questions 1 et 2
-%
-% Hypothèses :
-% - Les fichiers de données sont nommés "signalXXX-026.dat" avec XXX allant
-%   de 001 à 071, correspondant à la ligne j = 26.
-% - dt = 2.5e-3 s, N = 1632 échantillons, dx = 1e-3 m.
-% - K = 100, donc τ ∈ [-K*dt, K*dt].
-%
-% Énoncé :
-% Q1 : Calculer les coefficients de corrélation temporelle R_{0i}(τ) entre
-%      le point de référence (i0 = 37, j = 26) et tous les points de la ligne
-%      (1 ≤ i ≤ 71) pour τ ∈ [-K*dt, K*dt] et tracer quelques courbes.
-%
-% Q2 : Tracer les isocontours de R_{0i}(r,τ) (avec r = (i-i0)*dx en abscisse et τ en ordonnée),
-%      extraire pour chaque point le décalage τ_max pour lequel R_{0i}(τ) est maximal
-%      (pour τ ≥ 0, en se limitant à une fenêtre primaire) et déterminer la vitesse de 
-%      convection U_c via un ajustement linéaire forcé à passer par l'origine : r = U_c * τ_max.
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
 clear; clc; close all;
 
-% Créer le dossier results s'il n'existe pas
 if ~exist('../results', 'dir')
     mkdir('../results');
 end
 
-%% Paramètres
-dt = 2.5e-3;         % Pas temporel (2.5 ms)
-N  = 1632;           % Nombre d'échantillons par série
-dx = 1e-3;           % Pas spatial (1 mm)
-K = 100;             % Nombre de pas pour τ (donc τ ∈ [-K*dt, K*dt])
-tauList = (-K:K)*dt; % Vecteur des décalages (en s)
+% ================================
+% QUESTION 1
+% ================================
+
+dt = 2.5e-3;
+N  = 1632;
+dx = 1e-3;
+K = 100;
+tauList = (-K:K)*dt;
 nTau = length(tauList);
-
-% Points spatiaux sur la ligne j = 26
-i0 = 37;             % Point de référence
-iList = 1:71;        % Indices des points sur la ligne
+i0 = 37;
+iList = 1:71;
 nPoints = length(iList);
-rVector = (iList - i0)*dx;  % r = (i - i0)*dx (en m)
+rVector = (iList - i0)*dx;
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% Question 1 : Calcul et tracé des courbes de corrélation R_{0i}(τ)
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-% 1) Chargement du signal de référence (i0 = 37)
 refFile = sprintf('../data/signaux/signal%03d-026.dat', i0);
 [uRef, ~] = load_velocity(refFile);
-uRefFluc = uRef - mean(uRef);  % u'_0 = u0 - \bar{u}_0
+uRefFluc = uRef - mean(uRef);
 
 if length(uRef) ~= N
     error('Le fichier de référence ne contient pas %d échantillons.', N);
 end
 
-% 2) Calcul des coefficients de corrélation R_{0i}(τ)
-CorrMatrix = zeros(nPoints, nTau);  % Matrice (nPoints x nTau)
+CorrMatrix = zeros(nPoints, nTau);
 
 for idx = 1:nPoints
     iCur = iList(idx);
-    
-    % Chargement du signal du point iCur
     targetFile = sprintf('../data/signaux/signal%03d-026.dat', iCur);
     [uTarget, ~] = load_velocity(targetFile);
-    
     if length(uTarget) ~= N
         error('Le fichier %s ne contient pas %d échantillons.', targetFile, N);
     end
-    
-    % Calcul de la fluctuation u'_i = u_i - \bar{u}_i
     uTargetFluc = uTarget - mean(uTarget);
-    
-    % Calcul pour chaque décalage τ = k*dt, pour k = -K ... K.
     for k = -K:K
-        col = k + K + 1;  % Transformation de k = -K...K en indice 1 ... 2K+1
+        col = k + K + 1;
         if k >= 0
-            nMax = N - k - 1;  % Borne supérieure corrigée
+            nMax = N - k - 1;
             num = sum(uRefFluc(1:nMax) .* uTargetFluc(1+k:nMax+k));
             den = sqrt(sum(uRefFluc(1:nMax).^2) * sum(uTargetFluc(1+k:nMax+k).^2));
         else
@@ -83,7 +49,6 @@ for idx = 1:nPoints
             num = sum(uRefFluc(1+kk:nMax+kk) .* uTargetFluc(1:nMax));
             den = sqrt(sum(uRefFluc(1+kk:nMax+kk).^2) * sum(uTargetFluc(1:nMax).^2));
         end
-        
         if den > 1e-14
             CorrMatrix(idx, col) = num / den;
         else
@@ -92,13 +57,13 @@ for idx = 1:nPoints
     end
 end
 
-% 3) Tracé des courbes de corrélation pour quelques points choisis
-pointsToPlot = [10, 26, 37, 60];  % Exemples d'indices parmi iList
+pointsToPlot = [10, 26, 37, 60];
 figure;
+set(gcf, 'Visible', 'off')
 hold on;
 for iVal = pointsToPlot
     idx = find(iList == iVal);
-    plot(tauList, CorrMatrix(idx, :), 'LineWidth', 1.5, 'DisplayName', sprintf('i = %d', iVal));
+    plot(tauList, CorrMatrix(idx, :), 'LineWidth', 0.5, 'DisplayName', sprintf('i = %d', iVal));
 end
 hold off;
 xlabel('\tau (s)');
@@ -107,12 +72,12 @@ title('Courbes de corrélation pour quelques points (Question 1)');
 legend('show'); grid on;
 saveas(gcf, '../results/courbes_correlation.png');
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% Question 2 : Tracé des isocontours, extraction du maximum primaire et estimation de U_c
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% ================================
+% QUESTION 2
+% ================================
 
-% 1) Tracé des isocontours du champ de corrélation R_{0i}(r,τ)
 figure;
+set(gcf, 'Visible', 'off')
 contourf(rVector, tauList, CorrMatrix', 20, 'LineColor','none');
 colorbar;
 xlabel('Distance r (m)');
@@ -120,47 +85,178 @@ ylabel('\tau (s)');
 title('Isocontours de R_{0i}(r,\tau) (Question 2)');
 saveas(gcf, '../results/isocontours_corr.png');
 
-% 2) Extraction de τ_max pour chaque point, en se limitant à une fenêtre primaire
-%    Ici, nous sélectionnons uniquement les τ ≤ tau_lim pour privilégier le maximum primaire.
-tau_lim = 0.02;  % Limite pour le maximum primaire (par exemple, 20 ms)
-tauPos = tauList(K+1:end);  % Valeurs pour τ ≥ 0
-valid_idx = find(tauPos <= tau_lim);
-if isempty(valid_idx)
-    valid_idx = 1:length(tauPos);
+tauMaxCenter = zeros(nPoints,1);
+for iRow = 1:nPoints
+    [~, idxMax] = max(CorrMatrix(iRow, :));
+    tauMaxCenter(iRow) = tauList(idxMax);
 end
 
-tauMax = zeros(nPoints,1);
-for idx = 1:nPoints
-    corrPos = CorrMatrix(idx, K+1:end);  % Partie pour τ ≥ 0
-    corrPrimary = corrPos(valid_idx);    % Restriction à la fenêtre primaire
-    [~, imax] = max(corrPrimary);
-    tauMax(idx) = tauPos(valid_idx(imax));
-end
+Uc_center = sum(rVector(:).*tauMaxCenter(:)) / sum(tauMaxCenter(:).^2);
+fprintf('Vitesse de convection estimée (raie centrale): U_c = %.10f m/s\n', Uc_center);
 
-% 3) Tracé du nuage de points (τ_max vs. r)
 figure;
-scatter(tauMax, rVector, 50, 'filled');
-xlabel('\tau_{max} (s)');
-ylabel('Distance r (m)');
-title('Nuage de points (τ_{max} vs. r) (Question 2)');
-grid on;
-saveas(gcf, '../results/nuage_points.png');
-
-% 4) Ajustement linéaire forcé à passer par l'origine pour estimer U_c
-%    On impose que r = U_c * τ_max (c'est-à-dire b = 0).
-Uc = sum(rVector(:) .* tauMax(:)) / sum(tauMax(:).^2);
-fprintf('Estimated convection speed U_c = %.4f m/s\n', Uc);
-
-% 5) Tracé du nuage de points avec la droite d'ajustement forcée par l'origine
-figure;
-scatter(tauMax, rVector, 50, 'filled'); hold on;
-tauFit = linspace(min(tauMax), max(tauMax), 100);
-rFit = Uc * tauFit;  % Ajustement linéaire forcé: r = U_c * τ
-plot(tauFit, rFit, 'r-', 'LineWidth', 2);
+set(gcf, 'Visible', 'off')
+contourf(rVector, tauList, CorrMatrix', 20, 'LineColor','none'); 
+colorbar;
+hold on;
+rFit = linspace(min(rVector), max(rVector), 100);
+tauTrend = rFit / Uc_center;
+plot(rFit, tauTrend, 'r-', 'LineWidth', 2);
 hold off;
-xlabel('\tau_{max} (s)');
-ylabel('Distance r (m)');
-title('Ajustement linéaire (passant par 0) pour l''estimation de U_c (Question 2)');
-legend('Données', sprintf('Droite: U_c = %.4f m/s', Uc), 'Location', 'Best');
+xlabel('Distance r (m)');
+ylabel('\tau (s)');
+title(sprintf('Isocontours avec tendance centrale : τ = r/U_c, U_c = %.4f m/s', Uc_center));
+legend('Tendance centrale', 'Location', 'Best');
 grid on;
-saveas(gcf, '../results/ajustement_lineaire.png');
+saveas(gcf, '../results/isocontours_corr_with_trend.png');
+
+% ================================
+% QUESTION 3
+% ================================
+
+I = 71;
+J = 39;
+Uc_center = 0.02;
+
+data = readmatrix('../data/champs/champ0020.dat', ...
+    'FileType', 'text', 'NumHeaderLines', 2);
+
+X_raw = data(:,1);
+Y_raw = data(:,2);
+u_raw = data(:,3);
+v_raw = data(:,4);
+
+X = reshape(X_raw, [I, J])';
+Y = reshape(Y_raw, [I, J])';
+u = reshape(u_raw, [I, J])';
+v = reshape(v_raw, [I, J])';
+
+u_moving = u - Uc_center; 
+v_moving = v;
+
+nbPointsDomain = 20;
+xRange = linspace(min(X(:)), max(X(:)), nbPointsDomain);
+yRange = linspace(min(Y(:)), max(Y(:)), nbPointsDomain);
+[Xstart_domain, Ystart_domain] = meshgrid(xRange, yRange);
+
+nbPointsInlet = 50;
+xLeft = min(X(:));
+yStart = linspace(min(Y(:)), max(Y(:)), nbPointsInlet);
+xStart_inlet = xLeft * ones(size(yStart));
+
+figure;
+set(gcf, 'Visible', 'off')
+quiver(X, Y, u, v);
+xlabel('X (m)'); ylabel('Y (m)');
+title('Champ de vecteurs - Référentiel fixe');
+axis equal; grid on;
+saveas(gcf, '../results/champ_vect_ref_mes.png');
+
+figure;
+set(gcf, 'Visible', 'off')
+verts_fixed_domain = stream2(X, Y, u, v, Xstart_domain, Ystart_domain);
+hlines_fixed_domain = streamline(verts_fixed_domain);
+set(hlines_fixed_domain, 'LineWidth', 0.5);
+xlabel('X (m)'); ylabel('Y (m)');
+title('Lignes de courant - Référentiel fixe');
+axis equal; grid on;
+saveas(gcf, '../results/streamlines_ref_mes_domain.png');
+
+figure;
+set(gcf, 'Visible', 'off')
+verts_fixed_inlet = stream2(X, Y, u, v, xStart_inlet, yStart);
+hlines_fixed_inlet = streamline(verts_fixed_inlet);
+set(hlines_fixed_inlet, 'LineWidth', 0.5);
+xlabel('X (m)'); ylabel('Y (m)');
+title('Lignes de courant - Référentiel fixe (Inlet Only)');
+axis equal; grid on;
+saveas(gcf, '../results/streamlines_ref_mes_inlet.png');
+
+figure;
+set(gcf, 'Visible', 'off')
+quiver(X, Y, u_moving, v_moving);
+xlabel('X (m)'); ylabel('Y (m)');
+title('Champ de vecteurs - Référentiel en translation');
+axis equal; grid on;
+saveas(gcf, '../results/champ_vect_ref_moving.png');
+
+figure;
+set(gcf, 'Visible', 'off')
+verts_moving_domain = stream2(X, Y, u_moving, v_moving, ...
+                              Xstart_domain, Ystart_domain);
+hlines_moving_domain = streamline(verts_moving_domain);
+set(hlines_moving_domain, 'LineWidth', 0.5);
+xlabel('X (m)'); ylabel('Y (m)');
+title('Lignes de courant - Référentiel en translation');
+axis equal; grid on;
+saveas(gcf, '../results/streamlines_ref_moving_domain.png');
+
+figure;
+set(gcf, 'Visible', 'off')
+verts_moving_inlet = stream2(X, Y, u_moving, v_moving, ...
+                             xStart_inlet, yStart);
+hlines_moving_inlet = streamline(verts_moving_inlet);
+set(hlines_moving_inlet, 'LineWidth', 0.5);
+xlabel('X (m)'); ylabel('Y (m)');
+title('Lignes de courant - Référentiel en translation (Inlet Only)');
+axis equal; grid on;
+saveas(gcf, '../results/streamlines_ref_moving_inlet.png');
+
+% ================================
+% QUESTION 4
+% ================================
+
+dx = mean(diff(X(1, :)));
+dy = mean(diff(Y(:, 1)));
+
+[dVdY, dVdX] = gradient(v, dy, dx);
+[dUdY, dUdX] = gradient(u, dy, dx);
+
+omega_z = dVdX - dUdY;
+
+figure;
+set(gcf, 'Visible', 'off')
+contourf(X, Y, omega_z, 20, 'LineColor','none');
+colorbar;
+axis equal; grid on;
+xlabel('X (m)');
+ylabel('Y (m)');
+title('Composante de la vorticité ω_z');
+saveas(gcf, '../results/vorticite.png');
+
+nbPointsDomain = 20;
+xRange = linspace(min(X(:)), max(X(:)), nbPointsDomain);
+yRange = linspace(min(Y(:)), max(Y(:)), nbPointsDomain);
+[Xstart_domain, Ystart_domain] = meshgrid(xRange, yRange);
+verts_fixed = stream2(X, Y, u, v, Xstart_domain, Ystart_domain);
+
+figure;
+set(gcf, 'Visible', 'off')
+contourf(X, Y, omega_z, 20, 'LineColor', 'none'); 
+colorbar;
+hold on;
+hlines_fixed = streamline(verts_fixed);
+set(hlines_fixed, 'LineWidth', 0.5, 'Color', [0.5 0.5 0.5]); 
+hold off;
+axis equal; grid on;
+xlabel('X (m)');
+ylabel('Y (m)');
+title('Superposition de la vorticité \omega_z et des lignes de courant (référentiel fixe)');
+saveas(gcf, '../results/vorticite_streamlines.png');
+
+% ================================
+% QUESTION 5
+% ================================
+
+Q2D = (1/4) * (dUdY - dVdX).^2 ...
+     - (1/2) * (dUdX.^2 + dVdY.^2 + (1/2)*(dUdY + dVdX).^2);
+
+figure;
+set(gcf, 'Visible', 'off')
+contourf(X, Y, Q2D, 20, 'LineColor','none');
+colorbar;
+axis equal; grid on;
+xlabel('X (m)');
+ylabel('Y (m)');
+title('Critère Q_{2D}');
+saveas(gcf, '../results/Q2D.png');
