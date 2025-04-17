@@ -116,8 +116,6 @@ saveas(gcf, '../results/isocontours_corr_with_trend.png');
 
 I = 71;
 J = 39;
-Uc_center = 0.02;
-
 data = readmatrix('../data/champs/champ0020.dat', ...
     'FileType', 'text', 'NumHeaderLines', 2);
 
@@ -146,61 +144,65 @@ xStart_inlet = xLeft * ones(size(yStart));
 
 figure;
 set(gcf, 'Visible', 'off')
+% Crée un fond neutre blanc pour "encadrer" le champ comme un contourf vide
+contourf(X, Y, zeros(size(X)), 1, 'LineColor', 'none');
+colormap([1 1 1]);  % fond blanc
+hold on;
 quiver(X, Y, u, v);
-xlabel('X (m)'); ylabel('Y (m)');
+hold off;
+xlabel('X (m)');
+ylabel('Y (m)');
 title('Champ de vecteurs - Référentiel fixe');
 axis equal; grid on;
-saveas(gcf, '../results/champ_vect_ref_mes.png');
+ylim([-10, 10]);  % borne verticale comme demandé
+saveas(gcf, '../results/champ_vect_box_ref_mes.png');
 
 figure;
 set(gcf, 'Visible', 'off')
-verts_fixed_domain = stream2(X, Y, u, v, Xstart_domain, Ystart_domain);
-hlines_fixed_domain = streamline(verts_fixed_domain);
-set(hlines_fixed_domain, 'LineWidth', 0.5);
-xlabel('X (m)'); ylabel('Y (m)');
+% On fait une "fausse" carte de fond blanche uniforme
+contourf(X, Y, zeros(size(X)), 1, 'LineColor', 'none'); 
+colormap([1 1 1]);  % blanc
+hold on;
+% Tracé des streamlines
+streamslice(X, Y, u, v, 2);  % Densité contrôlée
+hold off;
+axis equal; grid on;
+xlabel('X (m)');
+ylabel('Y (m)');
 title('Lignes de courant - Référentiel fixe');
-axis equal; grid on;
-saveas(gcf, '../results/streamlines_ref_mes_domain.png');
+ylim([-10, 10]);
+saveas(gcf, '../results/streamlines_box_ref_fixe.png');
 
 figure;
 set(gcf, 'Visible', 'off')
-verts_fixed_inlet = stream2(X, Y, u, v, xStart_inlet, yStart);
-hlines_fixed_inlet = streamline(verts_fixed_inlet);
-set(hlines_fixed_inlet, 'LineWidth', 0.5);
-xlabel('X (m)'); ylabel('Y (m)');
-title('Lignes de courant - Référentiel fixe (Inlet Only)');
-axis equal; grid on;
-saveas(gcf, '../results/streamlines_ref_mes_inlet.png');
-
-figure;
-set(gcf, 'Visible', 'off')
+% Crée un fond neutre blanc pour "encadrer" le champ comme un contourf vide
+contourf(X, Y, zeros(size(X)), 1, 'LineColor', 'none');
+colormap([1 1 1]);  % fond blanc
+hold on;
 quiver(X, Y, u_moving, v_moving);
-xlabel('X (m)'); ylabel('Y (m)');
-title('Champ de vecteurs - Référentiel en translation');
+hold off;
+xlabel('X (m)');
+ylabel('Y (m)');
+title('Champ de vecteurs - Référentiel en tranlation');
 axis equal; grid on;
-saveas(gcf, '../results/champ_vect_ref_moving.png');
+ylim([-10, 10]);  % borne verticale comme demandé
+saveas(gcf, '../results/champ_vect_box_ref_moving.png');
 
 figure;
 set(gcf, 'Visible', 'off')
-verts_moving_domain = stream2(X, Y, u_moving, v_moving, ...
-                              Xstart_domain, Ystart_domain);
-hlines_moving_domain = streamline(verts_moving_domain);
-set(hlines_moving_domain, 'LineWidth', 0.5);
-xlabel('X (m)'); ylabel('Y (m)');
+% On fait une "fausse" carte de fond blanche uniforme
+contourf(X, Y, zeros(size(X)), 1, 'LineColor', 'none'); 
+colormap([1 1 1]);  % blanc
+hold on;
+% Tracé des streamlines
+streamslice(X, Y, u_moving, v_moving, 2);  % Densité contrôlée
+hold off;
+axis equal; grid on;
+xlabel('X (m)');
+ylabel('Y (m)');
 title('Lignes de courant - Référentiel en translation');
-axis equal; grid on;
-saveas(gcf, '../results/streamlines_ref_moving_domain.png');
-
-figure;
-set(gcf, 'Visible', 'off')
-verts_moving_inlet = stream2(X, Y, u_moving, v_moving, ...
-                             xStart_inlet, yStart);
-hlines_moving_inlet = streamline(verts_moving_inlet);
-set(hlines_moving_inlet, 'LineWidth', 0.5);
-xlabel('X (m)'); ylabel('Y (m)');
-title('Lignes de courant - Référentiel en translation (Inlet Only)');
-axis equal; grid on;
-saveas(gcf, '../results/streamlines_ref_moving_inlet.png');
+ylim([-10, 10]);
+saveas(gcf, '../results/streamlines_box_ref_moving.png');
 
 % ================================
 % QUESTION 4
@@ -209,10 +211,11 @@ saveas(gcf, '../results/streamlines_ref_moving_inlet.png');
 dx = mean(diff(X(1, :)));
 dy = mean(diff(Y(:, 1)));
 
-[dVdY, dVdX] = gradient(v, dy, dx);
-[dUdY, dUdX] = gradient(u, dy, dx);
+% Méthode de différences centrées avec circshift
+dvdx = (circshift(v, [0, -1]) - circshift(v, [0, 1])) / (2 * dx);
+dudy = (circshift(u, [-1, 0]) - circshift(u, [1, 0])) / (2 * dy);
+omega_z = dvdx - dudy;
 
-omega_z = dVdX - dUdY;
 
 figure;
 set(gcf, 'Visible', 'off')
@@ -228,15 +231,13 @@ nbPointsDomain = 20;
 xRange = linspace(min(X(:)), max(X(:)), nbPointsDomain);
 yRange = linspace(min(Y(:)), max(Y(:)), nbPointsDomain);
 [Xstart_domain, Ystart_domain] = meshgrid(xRange, yRange);
-verts_fixed = stream2(X, Y, u, v, Xstart_domain, Ystart_domain);
 
 figure;
 set(gcf, 'Visible', 'off')
 contourf(X, Y, omega_z, 20, 'LineColor', 'none'); 
 colorbar;
 hold on;
-hlines_fixed = streamline(verts_fixed);
-set(hlines_fixed, 'LineWidth', 0.5, 'Color', [0.5 0.5 0.5]); 
+streamslice(X, Y, u, v, 2);  % 2 = densité modérée
 hold off;
 axis equal; grid on;
 xlabel('X (m)');
@@ -244,13 +245,41 @@ ylabel('Y (m)');
 title('Superposition de la vorticité \omega_z et des lignes de courant (référentiel fixe)');
 saveas(gcf, '../results/vorticite_streamlines.png');
 
+% === Superposition vorticité + lignes de courant (référentiel en translation) ===
+figure;
+set(gcf, 'Visible', 'off')
+contourf(X, Y, omega_z, 20, 'LineColor', 'none');
+colorbar;
+hold on;
+streamslice(X, Y, u_moving, v_moving, 2);  % Densité contrôlée
+hold off;
+axis equal; grid on;
+xlabel('X (m)');
+ylabel('Y (m)');
+title('Superposition de la vorticité \omega_z et des lignes de courant (référentiel translation)');
+saveas(gcf, '../results/vorticite_streamlines_moving.png');
+
+
 % ================================
 % QUESTION 5
 % ================================
 
-Q2D = (1/4) * (dUdY - dVdX).^2 ...
-     - (1/2) * (dUdX.^2 + dVdY.^2 + (1/2)*(dUdY + dVdX).^2);
+% Dérivées centrées
+dudx = (circshift(u, [0, -1]) - circshift(u, [0, 1])) / (2 * dx);
+dudy = (circshift(u, [-1, 0]) - circshift(u, [1, 0])) / (2 * dy);
+dvdx = (circshift(v, [0, -1]) - circshift(v, [0, 1])) / (2 * dx);
+dvdy = (circshift(v, [-1, 0]) - circshift(v, [1, 0])) / (2 * dy);
 
+% Calcul du terme rotationnel (vorticité / 2)
+Omega = 0.5 * (dvdx - dudy);
+
+% Calcul du tenseur symétrique S^2
+S2 = dudx.^2 + dvdy.^2 + 0.5 * (dudy + dvdx).^2;
+
+% Formule de Q_{2D}
+Q2D = Omega.^2 - S2;
+
+% Affichage
 figure;
 set(gcf, 'Visible', 'off')
 contourf(X, Y, Q2D, 20, 'LineColor','none');
@@ -260,3 +289,16 @@ xlabel('X (m)');
 ylabel('Y (m)');
 title('Critère Q_{2D}');
 saveas(gcf, '../results/Q2D.png');
+
+figure;
+set(gcf, 'Visible', 'off')
+contourf(X, Y, Q2D, 20, 'LineColor','none');
+colormap(parula); colorbar;
+hold on;
+streamslice(X, Y, u_moving, v_moving, 2);
+hold off;
+axis equal; grid on;
+xlabel('X (m)');
+ylabel('Y (m)');
+title('Superposition de Q_{2D} et des lignes de courant (référentiel translation)');
+saveas(gcf, '../results/Q2D_streamlines_moving.png');
